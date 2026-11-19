@@ -12,14 +12,13 @@
     "install",
     "verify"
   ],
-  "homepage": "https://github.com/Magithar/skills/tree/main/tools/skill-land",
+  "homepage": "https://github.com/Magithar/skill-land#readme",
   "bugs": {
-    "url": "https://github.com/Magithar/skills/issues"
+    "url": "https://github.com/Magithar/skill-land/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Magithar/skills.git",
-    "directory": "tools/skill-land"
+    "url": "git+https://github.com/Magithar/skill-land.git"
   },
   "author": "Magithar",
   "license": "MIT",

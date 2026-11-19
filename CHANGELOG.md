@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Moved to its own repository**, [Magithar/skill-land](https://github.com/Magithar/skill-land), with
+  full history. It previously lived in `tools/skill-land/` of
+  [Magithar/skills](https://github.com/Magithar/skills), where releases up to 1.7.0 were tagged
+  `skill-land-v*`. Release tags here are plain `v*`; the earlier ones are recreated on the same code.
+
 ## 1.7.0
 
 ### Added
