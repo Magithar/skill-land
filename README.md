@@ -16,7 +16,7 @@
 ---
 
 <p align="center">
-  <a href="#install">Install</a> • <a href="#usage">Usage</a> • <a href="#why-this-exists">Why</a> • <a href="#what-verified-means">Verified</a> • <a href="#auditing-a-whole-directory">Auditing</a> • <a href="#does-the-agent-actually-load-it---discover">Discover</a> • <a href="#security-scan">Security Scan</a> • <a href="#antigravity">Antigravity</a> • <a href="#skill-discovery">Skill Discovery</a> • <a href="#what-skill-land-is-not">Is Not</a> • <a href="#project-structure">Project Structure</a> • <a href="#releasing">Releasing</a>
+  <a href="#install">Install</a> • <a href="#usage">Usage</a> • <a href="#why-this-exists">Why</a> • <a href="#what-verified-means">Verified</a> • <a href="#auditing-a-whole-directory">Auditing</a> • <a href="#does-the-agent-actually-load-it---discover">Discover</a> • <a href="#security-scan">Security Scan</a> • <a href="#antigravity">Antigravity</a> • <a href="#skill-discovery">Skill Discovery</a> • <a href="#what-skill-land-is-not">Is Not</a> • <a href="#project-structure">Project Structure</a> • <a href="#releasing">Releasing</a> • <a href="#related">Related</a>
 </p>
 
 ---
@@ -29,6 +29,9 @@ No install step. Run it with `npx`:
 npx skill-land Magithar/SKILLmama --for codex,antigravity   # install, then verify
 npx skill-land Magithar/SKILLmama --for codex --verify      # audit an existing install
 ```
+
+The examples throughout use [SKILLmama](https://github.com/Magithar/SKILLmama), a capability
+discovery skill by the same author. Any GitHub repo, local folder or `SKILL.md` works as a source.
 
 Or install it globally:
 
@@ -470,6 +473,15 @@ CI runs the tests, refuses to publish a version that already exists, checks the 
 
 Releases up to 1.7.0 were made from [Magithar/skills](https://github.com/Magithar/skills), where
 skill-land used to live under `tools/skill-land/`.
+
+---
+
+## Related
+
+- [SKILLmama](https://github.com/Magithar/SKILLmama), capability discovery engine: finds and ranks
+  the libraries, SDKs and tools for your stack. The skill used in the examples above.
+- [Magithar/skills](https://github.com/Magithar/skills), agent skills installable as a Claude Code
+  plugin, including `dep-egress` and `evidence-loop`.
 
 ---
 
