@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.2
+
+Docs and CI only; the installer is unchanged from 1.7.1.
+
+### Fixed
+- **README: the "non-empty" verify check is described correctly.** Since 1.7.1 an empty file
+  verifies when the source file is empty too; the README still listed non-empty as unconditional.
+
+### Changed
+- **CI uses `actions/checkout` and `actions/setup-node` v7**, which run on Node 24. The v4 actions
+  ran on the deprecated Node 20 runtime and triggered a warning on every run.
+
 ## 1.7.1
 
 Five ways an install read as verified, or a run exited 0, when it should not have, and one way
