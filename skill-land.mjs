@@ -344,7 +344,10 @@ function verify(target, expected) {
   // it read 25266 for a 25546-byte file and would pass two different files
   // that happened to share a character count.
   const raw = readFileSync(target);
-  ok("non-empty", raw.length > 0, `${raw.length} bytes`);
+  // Empty only fails when the source was not empty. A skill may ship an empty
+  // file on purpose (scripts/__init__.py in anthropics/skills), and calling
+  // that a failed install blocked every skill that has one.
+  ok("non-empty", raw.length > 0 || expected.bytes === 0, `${raw.length} bytes`);
   const gotHash = sha256(raw);
   ok("content matches source", gotHash === expected.hash,
      `${raw.length} bytes sha ${gotHash.slice(0, 12)} vs ${expected.bytes} bytes sha ${expected.hash.slice(0, 12)}`);

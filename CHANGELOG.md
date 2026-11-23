@@ -2,7 +2,8 @@
 
 ## 1.7.1
 
-Five ways an install read as verified, or a run exited 0, when it should not have.
+Five ways an install read as verified, or a run exited 0, when it should not have, and one way
+a good install read as failed.
 
 ### Fixed
 - **`--strict` now fails the run when it refuses a skill.** It printed `verified` and exited 0 with
@@ -21,6 +22,8 @@ Five ways an install read as verified, or a run exited 0, when it should not hav
   installed as `skill`, so several of them wrote into one directory, each reported OK. Such a skill
   now takes its folder's name, and two skills that would still share a directory are refused before
   anything is written.
+- **An empty file no longer fails verification** when the source file is empty too. Every skill
+  shipping one (`scripts/__init__.py` in anthropics/skills: skill-creator, pptx) could never verify.
 
 ### Changed
 - **Moved to its own repository**, [Magithar/skill-land](https://github.com/Magithar/skill-land), with

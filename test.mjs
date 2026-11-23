@@ -386,6 +386,14 @@ t("no SKILL.md anywhere fails",          [empty, "--for", "codex"], 1, /no SKILL
     r.code === 0 && ["crlf-skill", "quoted", "plain-folder"].every((n) => existsSync(join(skillsDir, n, "SKILL.md")))
     && !existsSync(join(skillsDir, "skill")) && !existsSync(join(skillsDir, "-quoted-")), r.out);
 
+  // An empty file in the source is content, not a failed write.
+  const emptyFile = join(SANDBOX, "emptyfile");
+  mkdirSync(join(emptyFile, "ef", "scripts"), { recursive: true });
+  writeFileSync(join(emptyFile, "ef", "SKILL.md"), "---\nname: ef\n---\nx\n");
+  writeFileSync(join(emptyFile, "ef", "scripts", "__init__.py"), "");
+  r = run([emptyFile, "--for", "claude-code"]);
+  check("an empty file that is empty in the source verifies", r.code === 0 && /2\/2 files/.test(r.out), r.out);
+
   // Two skills that would share one install directory are refused before any write.
   const clash = join(SANDBOX, "clash");
   for (const d of ["x", "y"]) {
