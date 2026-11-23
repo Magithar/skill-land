@@ -137,7 +137,7 @@ A skill is a **directory**, not a file. `skill-land` copies every file under it 
 each one back. For each file:
 
 1. file exists at the target path
-2. non-empty
+2. non-empty, unless the source file is empty too
 3. byte-identical to the source
 4. frontmatter `name` matches the source (`SKILL.md` only)
 
