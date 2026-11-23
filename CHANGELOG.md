@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.7.1
+
+Five ways an install read as verified, or a run exited 0, when it should not have.
+
+### Fixed
+- **`--strict` now fails the run when it refuses a skill.** It printed `verified` and exited 0 with
+  nothing written, so a CI gate using `--strict` passed on the very skill it was meant to stop.
+- **Unknown options are an error.** A typo such as `--verfy` was ignored, turning a read-only check
+  into a full install; `--dryrun` would have written too.
+- **Symlinks in a skill install as files.** The link itself was copied, pointing into the temporary
+  clone that is deleted on exit, after it had already read back as verified. For a git source, a
+  link that resolves outside the repo (say to `~/.ssh/id_rsa`) is now refused and nothing is
+  written for that skill, since either way it would place that file where an agent auto-loads it.
+  Local paths may still link anywhere, as the skills CLI installs by symlink. Dangling links, and
+  links to directories, are refused for every source.
+- **Frontmatter saved with CRLF line endings is read.** It parsed as no frontmatter, so the skill
+  installed under a placeholder name. Quoted names (`name: "foo"`) no longer install as `-foo-`.
+- **`--all` no longer overwrites skills on top of each other.** A skill with no frontmatter name
+  installed as `skill`, so several of them wrote into one directory, each reported OK. Such a skill
+  now takes its folder's name, and two skills that would still share a directory are refused before
+  anything is written.
 
 ### Changed
 - **Moved to its own repository**, [Magithar/skill-land](https://github.com/Magithar/skill-land), with

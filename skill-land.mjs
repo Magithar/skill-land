@@ -12,7 +12,7 @@
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync,
   readFileSync, realpathSync, rmSync, statSync, writeFileSync,
 } from "fs";
 import { homedir, tmpdir } from "os";
@@ -180,15 +180,34 @@ function collectSkillFiles(skillDir, skillFile) {
     (a === skillFile ? -1 : b === skillFile ? 1 : 0) || a.localeCompare(b));
 }
 
+// CRLF is normalised first: a SKILL.md saved on Windows otherwise has no
+// frontmatter at all, and its skill was installed under a placeholder name.
+// YAML quotes are stripped, so `name: "foo"` is foo, not "foo" (-foo- on disk).
 function parseFrontmatter(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const m = text.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---(\n|$)/);
   if (!m) return {};
   const fm = {};
   for (const line of m[1].split("\n")) {
     const i = line.indexOf(":");
-    if (i > 0) fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    if (i > 0) fm[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
   }
   return fm;
+}
+
+// The directory name a skill installs under. Without a frontmatter name this
+// used to be the literal "skill" for every one, so --all wrote several skills
+// into one directory, each over the last, and reported all of them OK. Fall
+// back to the folder the skill lives in, which is what it is called on disk.
+function skillNameOf(skillPath, root) {
+  const fm = parseFrontmatter(readFileSync(skillPath, "utf-8"));
+  const dir = dirname(skillPath);
+  // At the source root the folder is a temp clone; use what the source is called.
+  const folder = dir !== root ? basename(dir)
+    : src.kind === "repo" ? src.label.split("/")[1]
+    : src.kind === "dir" ? basename(src.dir) : "";
+  const name = (fm.name || folder || "skill").toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "");
+  return name || "skill";
 }
 
 // ---------------------------------------------------------------- security
@@ -373,14 +392,41 @@ function runSkill(skillPath, root, quiet) {
   let skillSkipped = false;
   const body = readFileSync(skillPath, "utf-8");
   const fm = parseFrontmatter(body);
-  const skillName = (fm.name || "skill").toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  const skillName = skillNameOf(skillPath, root);
   const rawBody = readFileSync(skillPath);
 
   // The skill is the directory SKILL.md sits in. `name` is set only on SKILL.md
   // so the frontmatter check does not run against scripts and reference docs.
   const skillDir = dirname(skillPath);
   const skillFile = basename(skillPath);
-  const files = collectSkillFiles(skillDir, skillFile).map((rel) => {
+  const allRels = collectSkillFiles(skillDir, skillFile);
+
+  // Symlinks are copied as their contents (see copyFileSync below), so a link must
+  // resolve inside the source. Copying the link itself left it pointing into the
+  // temp clone, deleted on exit, after it had already read back as verified. And
+  // a link out of the source, say to ~/.ssh/id_rsa, would place that file where
+  // an agent auto-loads it, whether copied as a link or as bytes. Refuse that
+  // for cloned repos, which are untrusted. A local path is the user's own disk,
+  // and links out of it are normal (the skills CLI installs by symlink), so
+  // there a link only has to reach a real file.
+  const rootReal = realpathSync(root);
+  const confine = src.kind === "repo";
+  const badLinks = allRels.filter((rel) => {
+    try {
+      const real = realpathSync(join(skillDir, rel));
+      const inside = real === rootReal || real.startsWith(rootReal + "/");
+      return (confine && !inside) || !statSync(real).isFile();
+    } catch { return true; } // dangling
+  });
+  if (badLinks.length) {
+    const shown = badLinks.slice(0, 5).join(", ") + (badLinks.length > 5 ? ` +${badLinks.length - 5} more` : "");
+    const why = confine ? "points outside the repo, at a directory, or nowhere" : "points at a directory or nowhere";
+    if (quiet) console.log(`  ${skillName.slice(0, 28).padEnd(30)}${red("FAIL")}  symlink ${why}: ${shown}`);
+    else console.error(`\n  error  ${skillName}: symlink ${why}\n         ${shown}\n         Nothing was written for this skill.\n`);
+    return { name: skillName, fmName: fm.name, failed: 1, skipped: false, leftovers: 0 };
+  }
+
+  const files = allRels.map((rel) => {
     const raw = readFileSync(join(skillDir, rel));
     return { rel, bytes: raw.length, hash: sha256(raw),
              name: rel === skillFile ? fm.name : undefined };
@@ -407,7 +453,7 @@ function runSkill(skillPath, root, quiet) {
   };
 
   if (quiet) {
-    process.stdout.write(`  ${(fm.name || basename(dirname(skillPath))).slice(0, 28).padEnd(30)}`);
+    process.stdout.write(`  ${(fm.name || skillName).slice(0, 28).padEnd(30)}`);
   } else {
   console.log(`\n  source   ${tilde(src.label)}`);
   console.log(`  skill    ${fm.name || "(no frontmatter name)"}  [${files.length} file${files.length === 1 ? "" : "s"}, ${fmtBytes(totalBytes)}, SKILL.md sha ${files[0].hash.slice(0,12)}]`);
@@ -474,7 +520,9 @@ function runSkill(skillPath, root, quiet) {
         if (!verifyOnly) {
           try {
             mkdirSync(dirname(target), { recursive: true });
-            cpSync(join(skillDir, f.rel), target);
+            // copyFileSync follows links: install the bytes, never a link back into the
+            // source. Links were checked above to stay inside it.
+            copyFileSync(join(skillDir, f.rel), target);
           } catch (e) {
             writeErr = `${e.code || "error"}: ${e.message.split("\n")[0]}`;
           }
@@ -714,6 +762,15 @@ if (argv.includes("--list")) {
   process.exit(0);
 }
 
+// An unknown flag is an error, not ignored. `--verfy` meant "check, write
+// nothing" and ran a full install; `--dryrun` would have written too.
+const BOOL_FLAGS = new Set(["--project", "--dry-run", "--verify", "--discover",
+  "--skip-security", "--strict", "--all", "--verbose"]);
+for (const a of argv) {
+  if (a.startsWith("-") && !BOOL_FLAGS.has(a) && a !== "--for" && a !== "--skill")
+    die(`unknown option "${a}"\n         see skill-land --help`);
+}
+
 const flag = (n) => argv.includes(n);
 const values = (n) => argv.reduce((acc, a, i) =>
   a === n && argv[i + 1] ? acc.concat(argv[i + 1].split(",")) : acc, []);
@@ -754,6 +811,20 @@ try {
 
   // With --all the per-skill detail becomes a wall nobody reads, and an unread
   // report verifies nothing. Collapse to one line each unless asked otherwise.
+  // Two skills that install under one directory name would overwrite each other
+  // and both read back as verified (each check runs right after its own write).
+  // Refuse before writing anything.
+  const byName = new Map();
+  for (const p of skillPaths) {
+    const n = skillNameOf(p, root);
+    byName.set(n, [...(byName.get(n) || []), p]);
+  }
+  const clashes = [...byName].filter(([, ps]) => ps.length > 1);
+  if (clashes.length)
+    die(`${clashes.length} install name(s) shared by more than one skill; they would overwrite each other:\n` +
+      clashes.map(([n, ps]) => `           ${n}  ${ps.map((p) => p.replace(root, ".")).join(", ")}`).join("\n") +
+      `\n         Give each a distinct frontmatter name, or install them one by one with --skill.`);
+
   const quiet = allSkills && !verbose;
   if (quiet) console.log(`\n  source   ${src.label}\n  skills   ${skillPaths.length} found`);
 
@@ -793,8 +864,12 @@ if (leftovers) {
   console.log(`        The agent can still read them. Nothing was removed; review and delete by hand.\n`);
 }
 
-if (failed) {
-  console.error(`  ${red(`✗ ${failed} install(s) failed verification`)}\n`);
+// A skill --strict refused was not installed, so the run did not do what was
+// asked. It used to print "verified" and exit 0, which a CI gate reads as pass.
+if (failed || skipped.length) {
+  if (failed) console.error(`  ${red(`✗ ${failed} install(s) failed verification`)}`);
+  if (skipped.length) console.error(`  ${red(`✗ ${skipped.length} skill(s) not installed: refused by --strict`)}  ${skipped.join(", ")}`);
+  console.error("");
   process.exit(1);
 }
 // Close on the outcome in plain words: what is ready, and for which agent.

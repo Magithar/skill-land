@@ -309,6 +309,94 @@ t("no SKILL.md anywhere fails",          [empty, "--for", "codex"], 1, /no SKILL
   else { fail++; console.log("  FAIL  a missing agent binary is not checked, not failed\n" + r.out); }
 }
 
+// 1.7.1 regressions. Each one reported "verified" for an install that was not.
+{
+  const check = (label, ok, out) => {
+    if (ok) { pass++; console.log(`  pass  ${label}`); }
+    else { fail++; console.log(`  FAIL  ${label}\n` + (out || "").split("\n").map((l) => "          " + l).join("\n")); }
+  };
+  const skillsDir = join(HOME, ".claude", "skills");
+
+  // --strict refusing a skill means it was not installed: exit 1, not "verified".
+  const bin = join(SANDBOX, "bin-strict");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "skillspector"),
+    `#!/bin/sh\necho '{"risk_assessment":{"score":90,"severity":"HIGH","recommendation":"DO_NOT_INSTALL"},"issues":[]}'\nexit 1\n`);
+  chmodSync(join(bin, "skillspector"), 0o755);
+  const strictSrc = join(SANDBOX, "strict", "flagged");
+  mkdirSync(strictSrc, { recursive: true });
+  writeFileSync(join(strictSrc, "SKILL.md"), "---\nname: flagged\n---\nx\n");
+  let r = run([strictSrc, "--for", "claude-code", "--strict"], { path: `${bin}:${process.env.PATH}` });
+  check("--strict refusing a skill exits 1", r.code === 1 && /refused by --strict/.test(r.out)
+    && !existsSync(join(skillsDir, "flagged")), r.out);
+
+  // A typo must not turn a read-only check into an install.
+  r = run([oneSkill, "--for", "codex", "--verfy"]);
+  check("an unknown option is an error, and writes nothing", r.code === 1 && /unknown option "--verfy"/.test(r.out)
+    && !existsSync(join(HOME, ".codex", "skills", "demo-typo")), r.out);
+
+  // A symlink inside the source is installed as its contents, not as a link
+  // into a directory that is deleted on exit.
+  const linked = join(SANDBOX, "linked-file");
+  mkdirSync(join(linked, "lk"), { recursive: true });
+  writeFileSync(join(linked, "lk", "SKILL.md"), "---\nname: lk\n---\nx\n");
+  writeFileSync(join(linked, "shared.txt"), "shared\n");
+  execFileSync("ln", ["-s", "../shared.txt", join(linked, "lk", "ref.txt")]);
+  r = run([linked, "--for", "claude-code"]);
+  const installedRef = join(skillsDir, "lk", "ref.txt");
+  let isLink = true;
+  try { isLink = execFileSync("sh", ["-c", `test -L "${installedRef}" && echo y || echo n`], { encoding: "utf-8" }).trim() === "y"; } catch {}
+  check("a symlink in the skill installs as a regular file", r.code === 0 && !isLink
+    && existsSync(installedRef) && readFileSync(installedRef, "utf-8") === "shared\n", r.out);
+
+  // A cloned repo linking out of itself would put that file where the agent
+  // reads it. A fake `git` "clones" by copying a fixture, so no network.
+  const escape = join(SANDBOX, "escape");
+  mkdirSync(join(escape, "esc"), { recursive: true });
+  writeFileSync(join(escape, "esc", "SKILL.md"), "---\nname: esc\n---\nx\n");
+  writeFileSync(join(SANDBOX, "secret.txt"), "secret\n");
+  execFileSync("ln", ["-s", join(SANDBOX, "secret.txt"), join(escape, "esc", "key")]);
+  const gitBin = join(SANDBOX, "bin-git");
+  mkdirSync(gitBin, { recursive: true });
+  writeFileSync(join(gitBin, "git"), `#!/bin/sh\nfor a; do last="$a"; done\ncp -R "${escape}/." "$last"\n`);
+  chmodSync(join(gitBin, "git"), 0o755);
+  r = run(["someone/escape", "--for", "claude-code"], { path: `${gitBin}:${process.env.PATH}` });
+  check("a repo symlink out of the clone is refused and nothing is written", r.code === 1
+    && /symlink points outside the repo/.test(r.out) && !existsSync(join(skillsDir, "esc")), r.out);
+
+  // A dangling link is refused for every source kind.
+  const dangle = join(SANDBOX, "dangle");
+  mkdirSync(join(dangle, "dg"), { recursive: true });
+  writeFileSync(join(dangle, "dg", "SKILL.md"), "---\nname: dg\n---\nx\n");
+  execFileSync("ln", ["-s", join(SANDBOX, "nowhere"), join(dangle, "dg", "gone")]);
+  r = run([dangle, "--for", "claude-code"]);
+  check("a dangling symlink is refused and nothing is written", r.code === 1
+    && /points at a directory or nowhere/.test(r.out) && !existsSync(join(skillsDir, "dg")), r.out);
+
+  // CRLF frontmatter, quoted names, and no name at all each install under the right directory.
+  const names = join(SANDBOX, "names");
+  for (const [dir, body] of [["win", "---\r\nname: crlf-skill\r\n---\r\nx\r\n"],
+                             ["q", "---\nname: \"quoted\"\n---\nx\n"],
+                             ["plain-folder", "no frontmatter\n"]]) {
+    mkdirSync(join(names, dir), { recursive: true });
+    writeFileSync(join(names, dir, "SKILL.md"), body);
+  }
+  r = run([names, "--all", "--for", "claude-code"]);
+  check("CRLF frontmatter, quoted names and nameless skills install under their own names",
+    r.code === 0 && ["crlf-skill", "quoted", "plain-folder"].every((n) => existsSync(join(skillsDir, n, "SKILL.md")))
+    && !existsSync(join(skillsDir, "skill")) && !existsSync(join(skillsDir, "-quoted-")), r.out);
+
+  // Two skills that would share one install directory are refused before any write.
+  const clash = join(SANDBOX, "clash");
+  for (const d of ["x", "y"]) {
+    mkdirSync(join(clash, d), { recursive: true });
+    writeFileSync(join(clash, d, "SKILL.md"), "---\nname: same\n---\n" + d + "\n");
+  }
+  r = run([clash, "--all", "--for", "claude-code"]);
+  check("--all refuses skills that would overwrite each other", r.code === 1
+    && /would overwrite each other/.test(r.out) && !existsSync(join(skillsDir, "same")), r.out);
+}
+
 rmSync(SANDBOX, { recursive: true, force: true });
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);
